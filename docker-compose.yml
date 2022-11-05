@@ -1,0 +1,90 @@
+version: '3.5'
+
+services:
+
+  traefik:
+    image: "traefik"
+    container_name: "traefik"
+    command:
+      #- "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.ssh.address=:22"
+      - "--certificatesresolvers.myhttpchallenge.acme.httpchallenge=true"
+      - "--certificatesresolvers.myhttpchallenge.acme.httpchallenge.entrypoint=web"
+      #- "--certificatesresolvers.myhttpchallenge.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+      - "--certificatesresolvers.myhttpchallenge.acme.email=xxx@domain.tld"
+      - "--certificatesresolvers.myhttpchallenge.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - "/data/configs/letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    restart: always
+    
+    labels:
+      traefik.enable: "true"
+
+      # global redirect to https
+      traefik.http.routers.http-catchall.rule: "hostregexp(`{host:.+}`)"
+      traefik.http.routers.http-catchall.entrypoints: "web"
+      traefik.http.routers.http-catchall.middlewares: "redirect-to-https"
+
+      # middleware redirect
+      traefik.http.middlewares.redirect-to-https.redirectscheme.scheme: "https"
+
+      ### Use These Lables
+      # traefik.enable: "true"
+      # traefik.http.routers.xxx.rule: "Host(`xxx.domain.tld`)"
+      # traefik.http.routers.xxx.entrypoints: "websecure"
+      # traefik.http.routers.xxx.tls.certresolver: "myhttpchallenge"
+
+  mariadb:
+    image: lscr.io/linuxserver/mariadb:latest
+    container_name: hedgedoc_mariadb
+    restart: unless-stopped
+    volumes:
+      - /data/configs/hedgedoc/database:/config
+    environment:
+      - MYSQL_ROOT_PASSWORD=xxxxxxxxxxxxx
+      - MYSQL_DATABASE=hedgedoc
+      - MYSQL_USER=hedgedoc
+      - MYSQL_PASSWORD=xxxxxxxxxxxxx
+      - PGID=1000
+      - PUID=1000
+      - TZ=America/Los_Angeles
+
+  hedgedoc:
+    image: lscr.io/linuxserver/hedgedoc:latest
+    container_name: hedgedoc
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+    volumes:
+      - /data/configs/hedgedoc:/config
+    environment:
+      - DB_HOST=mariadb
+      - DB_USER=hedgedoc
+      - DB_PASS=xxxxxxxxxxxxx
+      - DB_NAME=hedgedoc
+      - DB_PORT=3306
+      - PGID=1000
+      - PUID=1000
+      - TZ=America/Los_Angeles
+      - CMD_DOMAIN=hdocs.domain.tld
+      - CMD_URL_ADDPORT=false #optional
+      - CMD_PROTOCOL_USESSL=true #optional
+      - CMD_PORT=3000 #optional
+    # ports:
+    #   - "3000:3000"
+
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.hedgedoc.rule: "Host(`hdocs.domain.tld`)"
+      traefik.http.routers.hedgedoc.entrypoints: "websecure"
+      traefik.http.routers.hedgedoc.tls.certresolver: "myhttpchallenge"
